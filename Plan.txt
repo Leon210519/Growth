@@ -1,0 +1,332 @@
+You are an expert Unity engineer. Create a COMPLETE, production-ready Unity project (Unity 2022.3 LTS or newer LTS) for an Android mobile Idle/Tycoon game with rewarded ads and in-app purchases. Keep the initial scope minimal but robust, and write clean, well-commented C# code. Do NOT remove previously described features in later steps; only extend.
+
+=====================
+GOALS & CORE LOOP
+=====================
+- MVP loop: tap income + idle income -> buy upgrades -> soft prestige (shards) -> multiplier -> faster progress.
+- Currencies: 
+  1) Soft currency: Coins 
+  2) Premium currency: Gems
+- Upgrades (3 tracks): Income/sec, Tap value, Offline multiplier.
+- Prestige: converts progress to Shards -> global multiplier.
+- Rewarded Ads: "2x income for 4 minutes" and "+1 prestige shard (max 3/day)".
+- IAP: Starter Pack, Remove Ads, Monthly Booster.
+- Offline earnings (capped).
+- Remote-tunable economy via Firebase Remote Config.
+
+=====================
+TECH STACK & PROJECT SETTINGS
+=====================
+- Unity 2022.3 LTS (or newer LTS), 2D URP. Target platform: Android.
+- Rendering: lightweight URP 2D setup.
+- UI: uGUI (Canvas, Layout Groups).
+- Analytics & Remote Config: Firebase (stubs + integration points).
+- Ads: Google AdMob (rewarded); provide placeholder ad unit IDs via ScriptableObject.
+- IAP: Unity IAP (Codeless NOT used; code-driven).
+- Build: IL2CPP, ARM64 only, Min SDK 24+. Target framerate 60. VSync off on mobile.
+- Safe Area support for notches. Single orientation: portrait.
+
+=====================
+DIRECTORY STRUCTURE
+=====================
+Create this exact structure and populate with code, assets and example ScriptableObjects:
+Assets/
+  Scripts/
+    Core/
+      GameManager.cs
+      TickService.cs             // fixed-time gameplay ticks, framerate-independent
+      TimeService.cs             // wall-clock & monotonic time, device-time tamper heuristics
+      SaveSystem/
+        SaveData.cs
+        SaveService.cs           // JSON + lightweight XOR or AES encryption
+        ISaveProvider.cs
+      Economy/
+        CurrencyType.cs
+        CurrencyService.cs
+        IncomeService.cs         // calculates income/sec, tap income
+        OfflineEarningsService.cs
+        PrestigeService.cs
+        UpgradeSystem/
+          UpgradeDefinition.cs   // ScriptableObject
+          UpgradeEntry.cs
+          UpgradeService.cs
+        Balancing/
+          BigNumber.cs           // K/M/B/T/aa formatting + safe math
+          CostCurve.cs
+          MilestoneBonus.cs
+      Monetization/
+        Ads/
+          AdConfigSO.cs
+          AdService.cs           // Rewarded only for MVP; events, cooldowns, caps
+        IAP/
+          IAPConfigSO.cs
+          IAPService.cs
+          IAPProductIds.cs
+      Telemetry/
+        AnalyticsKeys.cs
+        AnalyticsService.cs      // Firebase wrappers (stubs + hooks)
+        RemoteConfigKeys.cs
+        RemoteConfigService.cs
+      DebugTools/
+        DebugConsole.cs
+        DebugPanelController.cs  // enable/disable via Scripting Define "DEV"
+    UI/
+      Screens/
+        MainScreen.cs            // Upgrade cards, currencies, prestige button
+        ConsentDialog.cs         // UMP stub integration hooks
+      Widgets/
+        CurrencyView.cs
+        UpgradeCardView.cs
+        TimerBadgeView.cs
+        PrestigePanelView.cs
+      Formatting/
+        NumberFormatter.cs       // uses BigNumber
+      UX/
+        Haptics.cs               // light haptics on action (guarded on Android)
+    Utils/
+      EventBus.cs
+      Disposable.cs
+  Resources/
+    Config/
+      AdConfig.asset             // placeholders for AdMob unit IDs
+      IAPConfig.asset            // product IDs placeholders
+      EconomyConfig.asset        // base multipliers, caps, defaults
+    Upgrades/
+      Income.asset
+      Tap.asset
+      Offline.asset
+  Editor/
+    Balancing/
+      CSVImportWindow.cs         // import CSV to ScriptableObjects
+    SafeArea/
+      SafeAreaHelper.cs
+  Tests/
+    PlayMode/
+      IncomeServiceTests.cs
+      UpgradeServiceTests.cs
+      OfflineEarningsTests.cs
+      PrestigeServiceTests.cs
+    EditMode/
+      CostCurveTests.cs
+      BigNumberTests.cs
+  Art/
+    UI/Placeholders/ (basic sprites, font)
+  Scenes/
+    Bootstrap.unity
+    Main.unity
+  Docs/
+    README.md
+    PRIVACY_POLICY_TEMPLATE.md
+    RELEASE_CHECKLIST.md
+
+=====================
+ARCHITECTURE & PATTERNS
+=====================
+- GameManager bootstraps services (Service Locator or simple DI via constructors).
+- TickService: fixed-interval updates (e.g., 10 ticks/sec) for deterministic economy.
+- CurrencyService: holds balances; exposes Add/Spend with event notifications.
+- UpgradeService: reads UpgradeDefinition ScriptableObjects; calculates next cost and effect via CostCurve.
+- IncomeService: computes total income/sec = base * upgrade multipliers * prestige multiplier * (remote modifiers).
+- OfflineEarningsService: calculates offline gains with cap and factor; uses TimeService to detect device time tampering (simple heuristics: if negative delta or excessive jump, clamp and flag).
+- RemoteConfigService: pulls keys on startup and caches; provide defaults if offline.
+- AdService: Rewarded only in MVP; cooldowns, daily caps; fires analytics events.
+- IAPService: Initialize on startup; expose Purchase(productId) and ProcessReceipt callbacks; non-consumables (Remove Ads), consumables (Gems), subscription-like Monthly Booster (non-auto-renewing placeholder).
+- SaveService: autosave every 30s and on app pause/quit; versioned SaveData to allow migrations.
+
+=====================
+DATA MODELS & FORMULAS
+=====================
+- Soft currency (Coins): double or decimal; use BigNumber wrapper for display and safe arithmetic beyond 1e15.
+- Premium currency (Gems): int.
+- Income formula:
+  incomePerSecond = baseIncome * (1 + uIncome)^a * (1 + uTap)^b * prestigeMult * remoteGlobalMult
+  where a,b in [0.8..1.2], baseIncome default = 1.0
+- Tap income = (baseTap * (1 + uTap)) * prestigeMult
+- Cost curve:
+  cost(level) = startCost * growth^level   // growth in [1.07..1.15]
+- Milestones: every 25 levels, +15% global income multiplier (stacking).
+- Offline:
+  offlineEarnings = min(maxOfflineHours, hoursAway) * incomeAtLogout * offlineFactor
+  offlineFactor default = 0.7; maxOfflineHours default = 10
+- Prestige:
+  shardsGained = floor( log10(totalLifetimeCoins + 1) )
+  prestigeMult = 1 + 0.5 * totalShards
+  Confirm dialog shows “Gain X shards (+Y% global)”.
+
+=====================
+REMOTE CONFIG (Firebase) – DEFAULTS & KEYS
+=====================
+Create RemoteConfigKeys.cs and list these constants. Implement RemoteConfigService defaults:
+- "income_base"               : 1.0
+- "growth_income"             : 1.12
+- "growth_tap"                : 1.10
+- "growth_offline"            : 1.13
+- "offline_factor"            : 0.7
+- "max_offline_hours"         : 10
+- "milestone_every_levels"    : 25
+- "milestone_bonus_percent"   : 15
+- "rewarded_cooldown_min"     : 10
+- "rewarded_shard_daily_cap"  : 3
+- "global_income_multiplier"  : 1.0
+- "ab_feature_interstitials"  : false  // A/B flag; off in MVP
+- "ab_booster_percent"        : 10     // Monthly booster effect
+- "offer_first_session_delay_s": 420   // first offer after 7 minutes
+
+=====================
+ANALYTICS EVENTS (Firebase)
+=====================
+Create AnalyticsKeys.cs and strongly-typed wrappers:
+- session_start
+- upgrade_purchase {id, level, cost}
+- tap {value}
+- income_tick {income_ps}
+- prestige {shards_gained, total_shards, lifetime_coins}
+- ad_reward {type: "double_income"|"shard", value, cooldown_remaining}
+- iap_purchase {product_id, price, iso_currency}
+- offline_earnings {hours, earnings, clamped_by_cap}
+- rc_fetch {success, latency_ms}
+
+=====================
+ADS (AdMob) – MVP
+=====================
+- Only Rewarded Ads for launch.
+- AdConfigSO stores unit IDs as strings (placeholders).
+- Buttons on MainScreen:
+  1) "2x Income (4:00)" – starts a 4-minute double-income buff; 10-min cooldown. Show a small timer badge.
+  2) "+1 Shard (Daily x/3)" – grants 1 shard up to daily cap, respects cooldown.
+- Handle no-fill and offline gracefully with UI feedback.
+
+=====================
+IAP – MVP
+=====================
+- IAPProductIds.cs — string constants (placeholders):
+  - "com.leon.idle.starterpack" (non-consumable bundle: +500 Gems, Remove Ads, 20-min boost)
+  - "com.leon.idle.removeads" (non-consumable)
+  - "com.leon.idle.monthlybooster" (consumable placeholder acting like 30-day key)
+- IAPConfigSO contains metadata (price string placeholders, descriptions).
+- Implement receipt processing stub (no real server validation in MVP; code comments where to add server-side later).
+- First-session offer: one-time popup after RemoteConfig "offer_first_session_delay_s".
+
+=====================
+UI/UX
+=====================
+- MainScreen:
+  - Top bar: Coins, Gems (CurrencyView with NumberFormatter).
+  - Center: Three UpgradeCardView (Income, Tap, Offline) with cost, next gain, Buy button.
+  - Bottom: PrestigePanelView (shows shards to gain, current multiplier, Confirm button).
+  - Two ad buttons with timers/badges.
+- Use clear tooltips: show exact % gain for next level.
+- Haptics.cs: light vibration on upgrade, prestige, ad reward (guarded with platform checks).
+- SafeAreaHelper.cs: ensure UI inside safe areas.
+- Simple, readable font and high-contrast colors.
+
+=====================
+ANTI-CHEAT HEURISTICS (MVP)
+=====================
+- TimeService compares saved monotonic elapsed time vs DateTime.Now deltas:
+  - If negative or > 24h jump: clamp offline earnings to 0 and set a "time_tamper_flag".
+  - Log analytics event offline_earnings with clamped_by_cap = true when capped.
+- Do not block gameplay; just clamp and log.
+
+=====================
+SAVE/LOAD & VERSIONING
+=====================
+- SaveData fields:
+  - version, coins, gems, totalLifetimeCoins, upgrades (id->level), shards, buffs (doubleIncomeRemaining), timestamps (lastQuit, lastTick), dailyCaps (adShardTakenToday), removeAdsOwned, monthlyBoosterExpiryUtc
+- SaveService: JSON + lightweight XOR or AES; autosave every 30s and on OnApplicationPause/OnApplicationQuit.
+- Add migration path when version changes (e.g., new fields default).
+
+=====================
+CSV BALANCING PIPELINE
+=====================
+- Editor/CSVImportWindow.cs:
+  - Import a CSV with columns: level, cost, cumulative_spend, income_mult_from_upgrade, global_mult_from_milestones
+  - Update corresponding UpgradeDefinition assets and milestone data.
+- Provide a sample CSV (as a TextAsset) and import it by default to populate.
+
+=====================
+UNIT TESTS
+=====================
+- CostCurveTests: growth curve monotonicity & expected values.
+- IncomeServiceTests: verify income scaling with upgrades and prestige.
+- OfflineEarningsTests: caps & factor adhere to Remote Config defaults.
+- PrestigeServiceTests: shardsGained = floor(log10(totalLifetimeCoins+1)).
+- BigNumberTests: formatting 999.9K → 1.0M boundaries; large values.
+
+=====================
+SCENES & BOOT
+=====================
+- Bootstrap.unity: initializes services, loads Remote Config (async), then Main.
+- Main.unity: contains MainScreen and links to services via GameManager (drag & drop ScriptableObjects).
+
+=====================
+DEBUG & DEV TOOLS
+=====================
+- DebugPanelController: toggle with three-tap on version label (DEV define). 
+  - Grant 1e6 coins, +100 gems, +1 shard, set upgrade levels, fast-forward time by N hours (for offline test), force RC refetch.
+- DebugConsole: simple in-app log viewer (DEV only).
+
+=====================
+CONSENT & PRIVACY
+=====================
+- Create a simple ConsentDialog with hooks to Google UMP (no real SDK code, but clear Todo comments and interface). 
+- Add Docs/PRIVACY_POLICY_TEMPLATE.md and link placeholder in README.
+
+=====================
+SCRIPTS & IMPORTANT CLASSES (write real C# bodies)
+=====================
+- GameManager.cs: Awake() composition root, OnApplicationPause/OnApplicationQuit save calls.
+- TickService.cs: fixed update loop independent of framerate; event for economy tick.
+- NumberFormatter.cs + BigNumber.cs: implement formatting (K, M, B, T, aa, ab, …), rounding to 1-3 decimals.
+- UpgradeDefinition.cs (ScriptableObject): 
+  fields: id, startCost, growth, baseEffect, effectExponentA, effectExponentB, milestoneEveryLevels, milestoneBonusPercent
+- UpgradeService.cs: compute cost, canBuy, buy, currentEffect for each track.
+- IncomeService.cs: total income/sec and tap income; apply RC and milestone bonuses.
+- OfflineEarningsService.cs: calculate and apply offline earnings; UI popup on first login each day.
+- PrestigeService.cs: compute shards to gain, apply reset, add multiplier.
+- AdService.cs: reward handling, cooldown timers, daily cap logic; interfaces for ad availability.
+- IAPService.cs: initialization, purchase flow, receipt handler; cached entitlements.
+- RemoteConfigService.cs: async fetch with timeout; apply defaults on failure; expose typed getters.
+- SaveService.cs: (de)serialize SaveData; versioned migrations.
+
+=====================
+UI PREFABS & WIRING
+=====================
+Create Prefabs for:
+- UpgradeCardView (title, level, effect preview, cost button)
+- CurrencyView (icon, value)
+- PrestigePanelView (multiplier, shards to gain, confirm dialog)
+- AdButtonView (label, cooldown timer)
+Wire them in Main.unity with serialized fields and demonstrate live updates.
+
+=====================
+ACCEPTANCE CRITERIA (MVP)
+=====================
+- Launch app → earns coins per second at base rate; tapping increases coins; values display with K/M/B formatting.
+- Buying upgrades increases income/tap according to curves; milestones apply every 25 levels visibly.
+- Closing app for N minutes yields offline popup with correct capped rewards.
+- Pressing “Prestige” shows shards to gain and resets progress correctly; multiplier increases.
+- Rewarded ads grant either 2x income for 4 minutes (with visible countdown) or +1 shard (max 3/day) with cooldown.
+- IAP buttons exist with mocked prices and purchase flow stubs; entitlements reflected in UI (e.g., Remove Ads flag).
+- Remote Config fetch modifies growth and factors at runtime (visible change after refetch).
+- All unit tests in Tests/ pass in PlayMode/EditMode.
+- Build compiles with IL2CPP + ARM64; Min SDK 24; runs on Android device/emulator.
+
+=====================
+DOCS & CHECKLIST
+=====================
+- Docs/README.md: 
+  - how to open, player settings, keystore guidance, where to set AdMob IDs, how to link Firebase, test purchase flows, enabling DEV panel.
+- Docs/RELEASE_CHECKLIST.md:
+  - Set package name, icons, AdMob Live IDs, GDPR consent (UMP), Data Safety form notes, Privacy Policy URL, IL2CPP/ARM64, Play Integrity (optional), internal test track steps.
+
+=====================
+CONSTRAINTS & STYLE
+=====================
+- No paid third-party assets. Prefer Unity packages and lightweight code.
+- Keep classes small and SRP-adherent, with XML doc comments for public APIs.
+- Use async/await for network-like stubs (Remote Config).
+- Guard platform-specific code with #if UNITY_ANDROID etc.
+- Never block on Remote Config or Ads; fail gracefully.
+
+Finally: Generate all code files, ScriptableObjects, prefabs, scenes, and docs as described. Make sure the project opens and compiles cleanly on first try.
