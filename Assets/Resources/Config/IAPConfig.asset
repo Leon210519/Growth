@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &1
+MonoBehaviour:
+  m_Name: IAPConfig
+  m_Script: {fileID: 11500000, guid: 00000000000000000000000000000000, type: 0}
+  Products:
+  - ProductId: com.leon.idle.starterpack
+    Title: Starter Pack
+    Description: 500 Gems + Remove Ads
+    PriceString: $4.99
+  - ProductId: com.leon.idle.removeads
+    Title: Remove Ads
+    Description: Removes banner and rewarded ads cooldowns
+    PriceString: $2.99
+  - ProductId: com.leon.idle.monthlybooster
+    Title: Monthly Booster
+    Description: 30 day +10% income boost
+    PriceString: $5.99
