@@ -1,0 +1,4 @@
+level,cost,cumulative_spend,income_mult_from_upgrade,global_mult_from_milestones
+1,10,10,1.0,1.0
+2,11.2,21.2,1.1,1.0
+3,12.5,33.7,1.2,1.0
