@@ -1,0 +1,36 @@
+CODex Execution Task (English)
+
+Objective:
+- Use the repository root file PLAN.txt as the authoritative specification.
+- Generate a new Unity 2022.3 LTS project for Android implementing the complete MVP Idle/Tycoon game as defined in PLAN.txt.
+
+Branching & Commits:
+- Create and work on a new branch: codex/idle-tycoon-mvp
+- Do not remove or break any existing repository files or functions. Only add or extend.
+- Commit in small, logical steps with clear messages, e.g.:
+  - feat(core): add GameManager, TickService and SaveService
+  - feat(ui): add MainScreen and UpgradeCardView prefabs
+  - feat(economy): implement UpgradeService and IncomeService
+  - chore(config): add RemoteConfig defaults and ScriptableObjects
+  - test: add PlayMode/EditMode unit tests
+  - docs: write README and release checklist
+- Open a Pull Request to main with a short summary and checklist taken from PLAN.txt Acceptance Criteria.
+
+Project Output:
+- Scaffold directory structure under Assets/ as defined in PLAN.txt.
+- Implement all scripts, ScriptableObjects, prefabs, scenes, tests, and docs.
+- Ensure IL2CPP + ARM64 build compiles. Min SDK 24. Portrait orientation. Safe area respected.
+- Include placeholder AdMob and IAP IDs in ScriptableObjects under Resources/Config (strings only).
+- All unit tests must pass.
+- Provide a short Docs/README.md with setup instructions (Firebase stubs, AdMob test ads, IAP sandbox).
+
+Rules:
+- Never delete or regress previously implemented features; only extend.
+- Prefer additive changes to avoid conflicts.
+- If any ambiguity exists, follow the exact defaults and formulas in PLAN.txt.
+- Keep code in English, with XML doc comments for public APIs.
+
+Deliverables:
+- Branch codex/idle-tycoon-mvp with a compiling Unity project.
+- Passing tests.
+- Docs/README.md and Docs/RELEASE_CHECKLIST.md updated.
